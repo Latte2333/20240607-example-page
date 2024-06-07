@@ -1,0 +1,335 @@
+---
+title: "hw2"
+output: html_document
+date: "2024-03-23"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+读取数据，用facet_wrap分面作图简单查看数据。
+```{r}
+library(ggplot2)
+library(tidyverse)
+
+GC<-read.csv("GrowthCurves.csv")
+names(GC)
+str(GC)
+
+ggplot(GC,aes(Time,Mass))+
+  geom_point()+
+  facet_wrap(~Number,scales = "free")+
+  labs(x="Time (days)",
+       y="Mass (g)",
+       fill=NULL,color=NULL)
+```
+
+先进行第一组数据α=3/4时的公式拟合尝试，核对结果图是否与文献一样。
+```{r}
+d_1<-filter(GC,Number=="1")
+d_1
+
+ggplot(d_1,aes(Time,Mass))+
+  geom_point()+
+  labs(x="Time (days)",
+       y="Mass (g)",
+       fill=NULL,color=NULL)
+
+m0_1<-GC$Mass[1]
+m0_1
+a0_1<-GC$a[1]
+M0_1<-GC$M[1]
+
+fit_1<-nls(Mass~M*(1-(1-(m0_1/M)^(1/4))*exp(-a*Time/4/M^(1/4)))^4,
+    data=d_1,
+    start=list(a=a0_1,M=M0_1)
+    )
+
+summary(fit_1)
+summary(fit_1)$coefficients
+a_1<-summary(fit_1)$coefficients[1]
+M_1<-summary(fit_1)$coefficients[2]
+
+ggplot(d_1,aes(Time,Mass))+
+  geom_point()+
+  geom_function(
+    fun=function(x)M_1*(1-(1-(m0_1/M_1)^(1/4))*exp(-a_1*x/4/M_1^(1/4)))^4)+
+  labs(x="Time (days)",
+       y="Mass (g)",
+       fill=NULL,color=NULL)
+```
+
+使用循环语句对三组数据进行α=3/4时的公式拟合尝试，并储存拟合结果。
+```{r}
+a<-numeric(3)
+M<-numeric(3)
+
+for(i in 1:3) {
+  d_i<-filter(GC,Number==i)
+  m0_i<-d_i$Mass[1]
+  a0_i<-d_i$a[1]
+  M0_i<-d_i$M[1]
+  fit_i<-nls(Mass~M*(1-(1-(m0_i/M)^(1/4))*exp(-a*Time/4/M^(1/4)))^4,
+             data=d_i,
+             start=list(a=a0_i,M=M0_i)
+             )
+  a[i]<-summary(fit_i)$coefficients[1]
+  M[i]<-summary(fit_i)$coefficients[2]
+  }
+
+a
+M
+```
+
+将拟合结果的所需数据分别赋给相应向量，用于计算Mass，
+部分数据还将用于后续计算d图的Dimensionless mass ratio和Dimensionless time。
+```{r}
+Time<-GC$Time
+Time
+length(Time)
+
+a_all<-c(rep(a[1],21),rep(a[2],14),rep(a[3],19))
+a_all
+length(a_all)
+
+M_all<-c(rep(M[1],21),rep(M[2],14),rep(M[3],19))
+M_all
+length(M_all)
+
+m0_all<-c(rep(GC$Mass[1],21),rep(GC$Mass[22],14),rep(GC$Mass[36],19))
+m0_all
+```
+
+根据拟合结果计算α=3/4时的Mass。
+```{r}
+Mass<-M_all*(1-(1-(m0_all/M_all)^(1/4))*exp(-a_all*Time/4/M_all^(1/4)))^4
+Mass
+length(Mass)
+```
+
+由于作者在文中表示，取γ2/3与γ3/4的值相等，且在α=2/3时并没有对M或γ进行拟合，
+故可直接将α=3/4时的拟合结果用于计算γ，进而计算α=2/3时的Mass。
+```{r}
+ra<-a_all/4/M_all^(1/4)
+
+Mass2<-M_all*(1-(1-(m0_all/M_all)^(1/3))*exp(-ra*Time))^3
+Mass2
+```
+
+将数据按不同物种分开储存。
+```{r}
+Mass0<-GC$Mass
+Mass0_cow<-Mass0[1:21]/1000
+Mass_cow<-Mass[1:21]/1000
+Mass2_cow<-Mass2[1:21]/1000
+cow_data<-data.frame(Time[1:21],Mass0_cow,Mass_cow,Mass2_cow)
+guppy_data<-data.frame(Time[22:35],Mass0[22:35],Mass[22:35],Mass2[22:35])
+hen_data<-data.frame(Time[36:54],Mass0[36:54],Mass[36:54],Mass2[36:54])
+
+names(cow_data)
+```
+
+分别绘制三个物种的两种拟合曲线图，将绘图结果储存。
+```{r}
+p1<-ggplot()+
+  geom_point(data=cow_data,aes(Time[1:21],Mass0_cow),
+             size=1.5,color="green3")+
+  geom_point(data=cow_data,aes(Time[1:21],Mass_cow),
+             size=1.5,color="blue3")+
+  geom_line(data=cow_data,aes(Time[1:21],Mass_cow),
+            color="blue3",linewidth=0.7,linetype=5)+
+  geom_point(data=cow_data,aes(Time[1:21],Mass2_cow),
+             size=1,color="red3")+
+  geom_line(data=cow_data,aes(Time[1:21],Mass2_cow),
+            color="red3",linewidth=0.7,linetype=2)+
+  labs(x="Time (days)",
+       y=expression("Mass ("*g*"×10"^3*")"),
+       title="Cow",
+       fill=NULL,color=NULL)+
+  scale_x_continuous(limits=c(0,2500),expand=c(0,0),
+                     breaks=seq(0,2500,by=500))+
+  scale_y_continuous(limits=c(0,450),expand=c(0,0),
+                     breaks=seq(0,450,by=50))+
+  theme(axis.ticks.length.x=unit(-0.15,'cm'),
+        axis.ticks.length.y=unit(-0.15,'cm'),
+        axis.ticks=element_line(linewidth=1),
+        axis.text=element_text(size=12,family="sans"),
+        axis.title=element_text(size=12,family="sans"),
+        plot.title=element_text(size=12,family="sans",hjust=0.5),
+        panel.border=element_rect(linewidth=1.2,fill="transparent"),
+        panel.background=element_blank(),
+        strip.background=element_blank(),
+        aspect.ratio=1/1.5)
+p1
+
+p2<-ggplot()+
+  geom_point(data=guppy_data,aes(Time[22:35],Mass0[22:35]),
+             size=1.5,color="green3")+
+  geom_point(data=guppy_data,aes(Time[22:35],Mass[22:35]),
+             size=1.5,color="blue3")+
+  geom_line(data=guppy_data,aes(Time[22:35],Mass[22:35]),
+            color="blue3",linewidth=0.7,linetype=5)+
+  geom_point(data=guppy_data,aes(Time[22:35],Mass2[22:35]),
+             size=1,color="red3")+
+  geom_line(data=guppy_data,aes(Time[22:35],Mass2[22:35]),
+            color="red3",linewidth=0.7,linetype=2)+
+  labs(x="Time (days)",
+       y="Mass (g)",
+       title="Guppy",
+       fill=NULL,color=NULL)+
+  scale_x_continuous(limits=c(0,90),expand=c(0,0),
+                     breaks=seq(0,90,by=10))+
+  scale_y_continuous(limits=c(0,0.16),expand=c(0,0),
+                     breaks=seq(0,0.16,by=0.02))+
+  theme(axis.ticks.length.x=unit(-0.15,'cm'),
+        axis.ticks.length.y=unit(-0.15,'cm'),
+        axis.ticks=element_line(linewidth=1),
+        axis.text=element_text(size=12,family="sans"),
+        axis.title=element_text(size=12,family="sans"),
+        plot.title=element_text(size=12,family="sans",hjust=0.5),
+        panel.border=element_rect(linewidth=1.2,fill="transparent"),
+        panel.background=element_blank(),
+        strip.background=element_blank(),
+        aspect.ratio=1/1.5)
+p2
+
+p3<-ggplot()+
+  geom_point(data=hen_data,aes(Time[36:54],Mass0[36:54]),
+             size=1.5,color="green3")+
+  geom_point(data=hen_data,aes(Time[36:54],Mass[36:54]),
+             size=1.5,color="blue3")+
+  geom_line(data=hen_data,aes(Time[36:54],Mass[36:54]),
+            color="blue3",linewidth=0.7,linetype=5)+
+  geom_point(data=hen_data,aes(Time[36:54],Mass2[36:54]),
+             size=1,color="red3")+
+  geom_line(data=hen_data,aes(Time[36:54],Mass2[36:54]),
+            color="red3",linewidth=0.7,linetype=2)+
+  labs(x="Time (days)",
+       y="Mass (g)",
+       title="Hen",
+       fill=NULL,color=NULL)+
+  scale_x_continuous(limits=c(0,400),expand=c(0,0),
+                     breaks=seq(0,400,by=50))+
+  scale_y_continuous(limits=c(0,2500),expand=c(0,0),
+                     breaks=seq(0,2500,by=500))+
+  theme(axis.ticks.length.x=unit(-0.15,'cm'),
+        axis.ticks.length.y=unit(-0.15,'cm'),
+        axis.ticks=element_line(linewidth=1),
+        axis.text=element_text(size=12,family="sans"),
+        axis.title=element_text(size=12,family="sans"),
+        plot.title=element_text(size=12,family="sans",hjust=0.5),
+        panel.border=element_rect(linewidth=1.2,fill="transparent"),
+        panel.background=element_blank(),
+        strip.background=element_blank(),
+        aspect.ratio=1/1.5)
+p3
+```
+
+根据文献中提供的公式分别计算Dimensionless mass ratio和Dimensionless time，
+其中，三个物种的数据为，取两种拟合结果，根据r和τ各自的公式分别计算，
+而用于绘制通用曲线的数据为，取三个物种全部的τ值，
+利用r和τ之间的关系公式计算出r值，将计算结果储存。
+```{r}
+mr1<-
+  (Mass0[1:21]/M_all[1:21])^(1/4)
+tr1<-
+  -log((1-(m0_all[1:21]/M_all[1:21])^(1/4))*exp(-ra[1:21]*Time[1:21]))
+mr2<-
+  (Mass0[1:21]/M_all[1:21])^(1/3)
+tr2<-
+  -log((1-(m0_all[1:21]/M_all[1:21])^(1/3))*exp(-ra[1:21]*Time[1:21]))
+mr_cow<-c(mr1,mr2)
+tr_cow<-c(tr1,tr2)
+
+mr3<-
+  (Mass0[22:35]/M_all[22:35])^(1/4)
+tr3<-
+  -log((1-(m0_all[22:35]/M_all[22:35])^(1/4))*exp(-ra[22:35]*Time[22:35]))
+mr4<-
+  (Mass0[22:35]/M_all[22:35])^(1/3)
+tr4<-
+  -log((1-(m0_all[22:35]/M_all[22:35])^(1/3))*exp(-ra[22:35]*Time[22:35]))
+mr_guppy<-c(mr3,mr4)
+tr_guppy<-c(tr3,tr4)
+
+mr5<-
+  (Mass0[36:54]/M_all[36:54])^(1/4)
+tr5<-
+  -log((1-(m0_all[36:54]/M_all[36:54])^(1/4))*exp(-ra[36:54]*Time[36:54]))
+mr6<-
+  (Mass0[36:54]/M_all[36:54])^(1/3)
+tr6<-
+  -log((1-(m0_all[36:54]/M_all[36:54])^(1/3))*exp(-ra[36:54]*Time[36:54]))
+mr_hen<-c(mr5,mr6)
+tr_hen<-c(tr5,tr6)
+
+tr<-c(tr1,tr2,tr3,tr4,tr5,tr6)
+mr<-1-exp(-tr)
+p4_data<-data.frame(mr,tr)
+  
+cow<-data.frame(mr_cow,tr_cow)
+guppy<-data.frame(mr_guppy,tr_guppy)
+hen<-data.frame(mr_hen,tr_hen)
+```
+
+绘制d图，将绘图结果储存。
+```{r}
+p4<-ggplot()+
+  geom_function(data=p4_data,aes(tr),
+                fun=function(x)1-exp(-(x)),
+                color="black",linewidth=1,linetype=3,alpha=0.5)+
+  scale_x_continuous(limits=c(0,8),expand=c(0,0),
+                     breaks=seq(0,8,by=1))+
+  scale_y_continuous(limits=c(0,1.2),expand=c(0,0),
+                     breaks=seq(0,1.2,by=0.2))+
+  geom_point(data=cow,aes(tr_cow,mr_cow),size=1.5,color="green3")+
+  geom_point(data=hen,aes(tr_hen,mr_hen),size=1.5,color="blue3")+
+  geom_point(data=guppy,aes(tr_guppy,mr_guppy),size=1.5,color="red3")+
+  labs(x="Dimensionless time",
+       y="Dimensionless mass ratio",
+       title="Scaling collapse",
+       fill=NULL,color=NULL)+
+  theme(axis.ticks.length.x=unit(-0.15,'cm'),
+        axis.ticks.length.y=unit(-0.15,'cm'),
+        axis.ticks=element_line(linewidth=1),
+        axis.text=element_text(size=12,family="sans"),
+        axis.title=element_text(size=12,family="sans"),
+        plot.title=element_text(size=12,family="sans",hjust=0.5),
+        panel.border=element_rect(linewidth=1.2,fill="transparent"),
+        panel.background=element_blank(),
+        strip.background=element_blank(),
+        aspect.ratio=1/1.5)
+
+?windowsFont()
+p4
+```
+
+将四张图像进行组合，存储结果，输出目标图像。
+```{r}
+library(patchwork)
+
+plot<-(p1+p2+p3+p4)+
+  plot_layout(ncol=2,heights=c(1,1),widths=c(1,1))
+plot
+```
